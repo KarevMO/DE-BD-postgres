@@ -61,17 +61,19 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 CREATE OR REPLACE FUNCTION export_csv() RETURNS VOID AS $outers$
 DECLARE
-    path text := '/tmp/users_audit_export_' || to_char(now(), 'YYYYMMDD_HH24MI') || '.csv';
+    export_date DATE := CURRENT_DATE - INTERVAL '1 day';  -- Дата за вчера
+    path text := '/tmp/users_audit_export_' || to_char(export_date, 'YYYYMMDD') || '.csv';
 BEGIN
     EXECUTE format(
         $inners$
         COPY (
             SELECT user_id, field_changed, old_value, new_value, changed_by, changed_at
             FROM users_audit
-            WHERE changed_at >= now() - interval '1 day'
+            WHERE changed_at >= %L::DATE 
+              AND changed_at < %L::DATE + INTERVAL '1 day'
             ORDER BY changed_at
         ) TO '%s' WITH CSV HEADER
-        $inners$, path
+        $inners$, export_date, export_date, path
     );	
 END;
 $outers$ LANGUAGE plpgsql;
