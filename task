@@ -35,6 +35,14 @@ begin
 		insert into users_audit(user_id, field_changed, old_value, new_value, changed_by)
 		values(old.id, 'role', old.role, new.role, current_user);
 	end if;
+	return new;	
+end;
+$$ language plpgsql;
+
+create or replace function update_date() returns trigger as $$
+declare
+begin 
+	new.updated_at := now();
 	return new;
 end;
 $$ language plpgsql;
@@ -44,10 +52,14 @@ before update on users
 for each row
 execute function audit_users_change();
 
+create trigger trigger_updata
+before update on users 
+for each row
+execute function update_date();  
+
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
-CREATE OR REPLACE FUNCTION export_csv() 
-RETURNS VOID AS $outers$
+CREATE OR REPLACE FUNCTION export_csv() RETURNS VOID AS $outers$
 DECLARE
     path text := '/tmp/users_audit_export_' || to_char(now(), 'YYYYMMDD_HH24MI') || '.csv';
 BEGIN
@@ -71,4 +83,6 @@ select cron.schedule(
 );
 
 update users 
-set name = 'Grisha', email = 'grigorii@example.com' where id = 1;
+set name = 'Dina' where id = 2;
+
+select * from users;
