@@ -1,0 +1,74 @@
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name TEXT,
+    email TEXT,
+    role TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE users_audit (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER,
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    changed_by TEXT,
+    field_changed TEXT,
+    old_value TEXT,
+    new_value TEXT
+);
+
+INSERT INTO users (name, email, role) VALUES
+('Ivan', 'ivan@example.com', 'user'),
+('Anna', 'anna@example.com', 'user');
+
+create or replace function audit_users_change() returns trigger as $$
+declare
+begin
+	if new.name is distinct from old.name then 
+		insert into users_audit(user_id, field_changed, old_value, new_value, changed_by)
+		values(old.id, 'name',old.name, new.name, current_user);
+	end if ;
+	if new.email is distinct from old.email then 
+		insert into users_audit(user_id, field_changed, old_value, new_value, changed_by)
+		values(old.id, 'email',old.email, new.email, current_user);
+	end if;
+	if new.role is distinct from old.role then
+		insert into users_audit(user_id, field_changed, old_value, new_value, changed_by)
+		values(old.id, 'role', old.role, new.role, current_user);
+	end if;
+	return new;
+end;
+$$ language plpgsql;
+
+create trigger trigger_auc
+before update on users
+for each row
+execute function audit_users_change();
+
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+CREATE OR REPLACE FUNCTION export_csv() 
+RETURNS VOID AS $outers$
+DECLARE
+    path text := '/tmp/users_audit_export_' || to_char(now(), 'YYYYMMDD_HH24MI') || '.csv';
+BEGIN
+    EXECUTE format(
+        $inners$
+        COPY (
+            SELECT user_id, field_changed, old_value, new_value, changed_by, changed_at
+            FROM users_audit
+            WHERE changed_at >= now() - interval '1 day'
+            ORDER BY changed_at
+        ) TO '%s' WITH CSV HEADER
+        $inners$, path
+    );	
+END;
+$outers$ LANGUAGE plpgsql;
+
+select cron.schedule(
+	job_name := 'daily_audit',
+	schedule := '0 3 * * *',
+	command := $$select export_csv();$$
+);
+
+update users 
+set name = 'Grisha', email = 'grigorii@example.com' where id = 1;
